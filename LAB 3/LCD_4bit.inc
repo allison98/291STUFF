@@ -227,12 +227,12 @@ endmac
 	swap a
 	anl a, #0fh
 	orl a, #30h
-	lcall putchar
+;	lcall putchar
 	; write least significant digit
 	mov a, r0
 	anl a, #0fh
 	orl a, #30h
-	lcall putchar
+;	lcall putchar
 	pop acc
 	ret
 END

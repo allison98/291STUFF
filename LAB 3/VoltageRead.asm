@@ -134,6 +134,16 @@ GSDone:
 	mov @R0, a
 	ret
 
+
+ Display_10_BCD:
+	Display_BCD(bcd+4)
+	Display_BCD(bcd+3)
+	Display_BCD(bcd+2)
+	Display_BCD(bcd+1)
+	Display_BCD(bcd+0)
+	ret
+
+
 Hello_World: DB  'Hello, World!', '\r', '\n', 0
 String: db 'good' , '\r', '\n', 0 
 Voltage: db 'Voltage is:', '\r', '\n', 0  
@@ -147,17 +157,14 @@ Voltage: db 'Voltage is:', '\r', '\n', 0
 MainProgram:
     mov SP, #7FH ; Set the stack pointer to the begining of idata
     
-<<<<<<< Updated upstream
+	; initalize lcd and serial ports
     lcall LCD_4BIT
-    lcall InitSerialPort
+    lcall InitSerialPort ;
     lcall INIT_SPI
-=======
+
     Set_Cursor(1,1)
 	Send_Constant_String(#Hello_World)
     
-    lcall InitSerialPort ;sets up serial port with putty
-    lcall INIT_SPI ;sets up serial port with mcp
->>>>>>> Stashed changes
     
 loop: ;begin the infinite loop  
  
@@ -167,7 +174,7 @@ loop: ;begin the infinite loop
 	lcall DO_SPI_G
 	mov R0, #10000000B ; Single ended, read channel 0
 	lcall DO_SPI_G
-	mov a, R1 ; save the high bits first
+	mov a, R1 ; save the high bits first ; since we're reading a 10 bit value
 	anl a, #00000011B ; We need only the two least significant bits (8 and 9)
 	mov Result+1, a ; Save result high.
 	mov R0, #55H ; It doesn't matter what we transmit...
@@ -175,46 +182,59 @@ loop: ;begin the infinite loop
 	mov Result, R1 ; R1 contains bits 0 to 7. Save result low.
 	
 	setb CE_ADC ;disable
-	
-; calculate voltage out
-	Load_X(Result)
-	Load_y(4096)
-	lcall mul32
-	Load_y(1023)
-	lcall div32
-	Load_y(1000)
-	lcall div32
-	mov a, x
-	hex2bcd(x)
-	
-	;da a
-	
-;	mov a, Result
-	
-;	cjne a, #0x0, goto
- ;   ljmp loop   
-  ;  mov DPTR, #Hello_World
-    
- ;  da a
-  ;  mov Result, a
-    
-    mov DPTR, #Voltage
- 	lcall SendString
-	Send_BCD(bcd)
-	Wait_Milli_Seconds(#255)
- 	Wait_Milli_Seconds(#255)
- 	Wait_Milli_Seconds(#255)
- 	Wait_Milli_Seconds(#255)
-    ;lcall SendString    
-    ljmp loop 
- 
- goto:  
- 
- ;	mov DPTR, #Hello_World
- ;	lcall SendString
- 	Send_BCD(#bcd)
+				
+ 	mov a, Result
+ 	da a
+ 	
+ 	mov bcd, a
+ 	Set_Cursor(2,1)
+ 	Display_BCD(bcd)
+ 	
  	Wait_Milli_Seconds(#255)
  	Wait_Milli_Seconds(#255)
  	
- 	ljmp loop   
+ 	;mov bcd, Result
+ 	
+ 	Set_Cursor(2, 7)
+	lcall Display_10_BCD
+ 	
+ ;	Send_BCD(Result) ; bcd is printed currently 53
+ 	
+ 	mov bcd, Result
+ 	
+ 	lcall bcd2hex ; bcd to x
+; i need to change result to decimal! 	
+ 	
+ 	
+ 	Wait_Milli_Seconds(#255)
+ 	Wait_Milli_Seconds(#255)
+; calculate voltage out
+	Load_X(Result)
+	Load_y(0x1000)
+	lcall mul32
+	Load_y(0x3ff)
+	lcall div32
+	Load_y(0x3E8)
+	lcall div32	
+	lcall hex2bcd
+	
+	mov a, bcd
+	da a
+	mov bcd, a
+	
+	Set_Cursor(1, 7)
+	lcall Display_10_BCD
+
+
+    mov DPTR, #Voltage
+	lcall SendString	
+	Send_BCD(bcd)
+	
+	Wait_Milli_Seconds(#255)
+ 	Wait_Milli_Seconds(#255)
+
+     
+    ljmp loop 
+ 
+ 
 END

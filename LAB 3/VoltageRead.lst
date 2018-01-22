@@ -189,153 +189,11 @@
 0000            188   CCF1           BIT 0xd9
 0000            189   CCF0           BIT 0xd8
 0000              2   org 0000H
-0000 0203C2       3      ljmp MainProgram
+0000 0203EA       3      ljmp MainProgram
 0003              4   
 0003              5   CLK  EQU 22118400
 0003              6   BAUD equ 115200
 0003              7   BRG_VAL equ (0x100-(CLK/(16*BAUD)))
-<<<<<<< Updated upstream
-0003              8   ; These ’EQU’ must match the wiring between the microcontroller and ADC
-0003              9   CE_ADC EQU P2.0
-0003             10   MY_MOSI EQU P2.1
-0003             11   MY_MISO EQU P2.2
-0003             12   MY_SCLK EQU P2.3
-0003             13   
-0030             14   dseg at 0x30
-0030             15   Result: ds 4
-0034             16   
-0034             17   
-0003             18   CSEG
-0003             19   ; These 'equ' must match the wiring between the microcontroller and the LCD!
-0003             20   LCD_RS equ P1.1
-0003             21   LCD_RW equ P1.2
-0003             22   LCD_E  equ P1.3
-0003             23   LCD_D4 equ P3.2
-0003             24   LCD_D5 equ P3.3
-0003             25   LCD_D6 equ P3.4
-0003             26   LCD_D7 equ P3.5
-                 28   	$LIST
-00B1             30   
-00B1             31   
-00B1             32   INIT_SPI:
-00B1 D2A2        33    setb MY_MISO ; Make MISO an input pin
-00B3 C2A3        34    clr MY_SCLK ; For mode (0,0) SCLK is zero
-00B5 22          35    ret
-00B6             36   
-00B6             37   DO_SPI_G:
-00B6 C0E0        38             push acc
-00B8 7900        39             mov R1, #0 ; Received byte stored in R1
-00BA 7A08        40             mov R2, #8 ; Loop counter (8-bits)
-00BC             41   DO_SPI_G_LOOP:
-00BC E8          42             mov a, R0 ; Byte to write is in R0
-00BD 33          43             rlc a ; Carry flag has bit to write
-00BE F8          44             mov R0, a
-00BF 92A1        45             mov MY_MOSI, c
-00C1 D2A3        46             setb MY_SCLK ; Transmit
-00C3 A2A2        47             mov c, MY_MISO ; Read received bit
-00C5 E9          48             mov a, R1 ; Save received bit in R1
-00C6 33          49             rlc a
-00C7 F9          50             mov R1, a
-00C8 C2A3        51             clr MY_SCLK
-00CA DAF0        52             djnz R2, DO_SPI_G_LOOP
-00CC D0E0        53             pop acc
-00CE 22          54             ret
-00CF             55   
-00CF             56   InitSerialPort:
-00CF             57       ; Since the reset button bounces, we need to wait a bit before
-00CF             58       ; sending messages, otherwise we risk displaying gibberish!
-00CF 79DE        59       mov R1, #222
-00D1 78A6        60       mov R0, #166
-00D3 D8FE        61       djnz R0, $   ; 3 cycles->3*45.21123ns*166=22.51519us
-00D5 D9FA        62       djnz R1, $-4 ; 22.51519us*222=4.998ms
-00D7             63       ; Now we can proceed with the configuration
-00D7 438780      64            orl     PCON,#0x80
-00DA 759852      65            mov     SCON,#0x52
-00DD 759B00      66            mov     BDRCON,#0x00
-00E0 759AF4      67            mov     BRL,#BRG_VAL
-00E3 759B1E      68            mov     BDRCON,#0x1E ; BDRCON=BRR|TBCK|RBCK|SPD;
-00E6 22          69       ret
-00E7             70   
-00E7             71   ; Send a character using the serial port
-00E7             72   putchar:
-00E7 3099FD      73       jnb TI, putchar
-00EA C299        74       clr TI
-00EC F599        75       mov SBUF, a
-00EE 22          76       ret
-00EF             77   
-00EF             78   ; Send a constant-zero-terminated string using the serial port
-00EF             79   SendString:
-00EF E4          80       clr A
-00F0 93          81       movc A, @A+DPTR
-00F1 6006        82       jz SendStringDone
-00F3 1200E7      83       lcall putchar
-00F6 A3          84       inc DPTR
-00F7 80F6        85       sjmp SendString
-00F9             86   SendStringDone:
-00F9 22          87       ret
-00FA             88    
-00FA             89   Hello_World:
-00FA 48656C6C    90       DB  'Hello, World!', '\r', '\n', 0
-     6F2C2057
-     6F726C64
-     210D0A00
-010A 676F6F64    91   String: db 'good' , '\r', '\n', 0   
-     0D0A00
-0111             92   ;Forever:
-0111             93   
-0111             94   ;lcall Delay
-0111             95   ;lcall Do_Something_With_Result
-0111             96   ;sjmp Forever
-0111             97   
-0111             98   MainProgram:
-0111 75817F      99       mov SP, #7FH ; Set the stack pointer to the begining of idata
-0114            100       
-0114 12005D     101       lcall LCD_4BIT
-0117 1200CF     102       lcall InitSerialPort
-011A 1200B1     103       lcall INIT_SPI
-011D            104       
-011D            105   loop:   
-011D            106    
-011D C2A0       107            clr CE_ADC
-011F            108            
-011F 7801       109            mov R0, #00000001B ; Start bit:1
-0121            110            
-0121 1200B6     111            lcall DO_SPI_G
-0124            112            
-0124 7880       113            mov R0, #10000000B ; Single ended, read channel 0
-0126            114            
-0126 1200B6     115            lcall DO_SPI_G
-0129            116            
-0129 E9         117            mov a, R1 ; R1 contains bits 8 and 9
-012A            118            
-012A 5403       119            anl a, #00000011B ; We need only the two least significant bits
-012C            120            
-012C F531       121            mov Result+1, a ; Save result high.
-012E 7855       122            mov R0, #55H ; It doesn't matter what we transmit...
-0130 1200B6     123            lcall DO_SPI_G
-0133 8930       124            mov Result, R1 ; R1 contains bits 0 to 7. Save result low.
-0135 D2A0       125            setb CE_ADC
-0137            126            
-0137 E530       127            mov a, Result
-0139            128            
-0139 B40008     129            cjne a, #0x0, goto
-013C            130          
-013C 9000FA     131       mov DPTR, #Hello_World
-013F            132   
-013F 1200EF     133       lcall SendString
-0142            134       
-0142 80D9       135       sjmp loop ; This is equivalent to 'forever: sjmp forever'
-0144            136    goto:  
-0144 90010A     137            mov DPTR, #String
-0147 1200EF     138            lcall SendString
-014A C002       139            push AR2
-014C 7AC8       139            mov R2, #200
-014E 12000E     139            lcall ?Wait_Milli_Seconds
-0151 D002       139            pop AR2
-0153            140            
-0153 80C8       141            sjmp loop   
-0155            142   END
-=======
 0003              8   REF equ 4.096
 0003              9   
 0003             10   ; These ’EQU’ must match the wiring between the microcontroller and ADC
@@ -365,232 +223,286 @@
 0003             34   LCD_D6 equ P3.4
 0003             35   LCD_D7 equ P3.5
                  37   $LIST
-00C7             39   
+00C1             39   
                 546   $LIST
                  41   $LIST
-0337             43   
-0337             44   ;---------------------------------;
-0337             45   ; initialize the slave                 ;
-0337             46   ;---------------------------------;
-0337             47   
-0337             48   INIT_SPI:
-0337 D2A2        49    setb MY_MISO ; Make MISO an input pin
-0339 C2A3        50    clr MY_SCLK ; For mode (0,0) SCLK is zero
-033B 22          51    ret
-033C             52   
-033C             53   ;---------------------------------;
-033C             54   ; recieive and send data               ;
-033C             55   ;---------------------------------;
-033C             56   
-033C             57   DO_SPI_G:
-033C C0E0        58             push acc
-033E 7900        59             mov R1, #0 ; Received byte stored in R1
-0340 7A08        60             mov R2, #8 ; Loop counter (8-bits)
-0342             61   DO_SPI_G_LOOP:
-0342 E8          62             mov a, R0 ; Byte to write is in R0
-0343 33          63             rlc a ; Carry flag has bit to write
-0344 F8          64             mov R0, a
-0345 92A1        65             mov MY_MOSI, c
-0347 D2A3        66             setb MY_SCLK ; Transmit
-0349 A2A2        67             mov c, MY_MISO ; Read received bit
-034B E9          68             mov a, R1 ; Save received bit in R1
-034C 33          69             rlc a
-034D F9          70             mov R1, a
-034E C2A3        71             clr MY_SCLK
-0350 DAF0        72             djnz R2, DO_SPI_G_LOOP
-0352 D0E0        73             pop acc
-0354 22          74             ret
-0355             75   
-0355             76   ;---------------------------------;
-0355             77   ; initialize the serial ports     ;
-0355             78   ;---------------------------------;
-0355             79   InitSerialPort:
-0355             80       ; Since the reset button bounces, we need to wait a bit before
-0355             81       ; sending messages, otherwise we risk displaying gibberish!
-0355 79DE        82       mov R1, #222
-0357 78A6        83       mov R0, #166
-0359 D8FE        84       djnz R0, $   ; 3 cycles->3*45.21123ns*166=22.51519us
-035B D9FA        85       djnz R1, $-4 ; 22.51519us*222=4.998ms
-035D             86       ; Now we can proceed with the configuration
-035D 438780      87            orl     PCON,#0x80
-0360 759852      88            mov     SCON,#0x52
-0363 759B00      89            mov     BDRCON,#0x00
-0366 759AF4      90            mov     BRL,#BRG_VAL
-0369 759B1E      91            mov     BDRCON,#0x1E ; BDRCON=BRR|TBCK|RBCK|SPD;
-036C 22          92       ret
-036D             93   
-036D             94   ; Send a character using the serial port
-036D             95   putchar:
-036D 3099FD      96       jnb TI, putchar
-0370 C299        97       clr TI
-0372 F599        98       mov SBUF, a
-0374 22          99       ret
-0375            100       
-0375            101   getchar:
-0375 3098FD     102            jnb RI, getchar
-0378 C298       103            clr RI
-037A E599       104            mov a, SBUF
-037C 22         105            ret     
-037D            106       
-037D            107   
-037D            108   ; Send a constant-zero-terminated string using the serial port
-037D            109   SendString:
-037D E4         110       clr A
-037E 93         111       movc A, @A+DPTR
-037F 6006       112       jz SendStringDone ;if a = 0 go to sendstring done
-0381 12036D     113       lcall putchar
-0384 A3         114       inc DPTR
-0385 80F6       115       sjmp SendString
-0387            116   SendStringDone:
-0387 22         117       ret
-0388            118    
-0388            119    
-0388            120   GetString:
-0388 7841       121            mov R0, #buffer
-038A            122   GSLoop:
-038A 120375     123            lcall getchar
-038D C0E0       124            push acc
-038F C3         125            clr c
-0390 9410       126            subb a, #10H
-0392 D0E0       127            pop acc
-0394 4004       128            jc GSDone
-0396 F6         129            MOV @R0, A
-0397 08         130            inc R0
-0398 80F0       131            SJMP GSLoop
-039A            132   GSDone:
-039A E4         133            clr a
-039B F6         134            mov @R0, a
-039C 22         135            ret
-039D            136   
-039D 48656C6C   137   Hello_World: DB  'Hello, World!', '\r', '\n', 0
+0331             43   
+0331             44   ;---------------------------------;
+0331             45   ; initialize the slave                 ;
+0331             46   ;---------------------------------;
+0331             47   
+0331             48   INIT_SPI:
+0331 D2A2        49    setb MY_MISO ; Make MISO an input pin
+0333 C2A3        50    clr MY_SCLK ; For mode (0,0) SCLK is zero
+0335 22          51    ret
+0336             52   
+0336             53   ;---------------------------------;
+0336             54   ; recieive and send data               ;
+0336             55   ;---------------------------------;
+0336             56   
+0336             57   DO_SPI_G:
+0336 C0E0        58             push acc
+0338 7900        59             mov R1, #0 ; Received byte stored in R1
+033A 7A08        60             mov R2, #8 ; Loop counter (8-bits)
+033C             61   DO_SPI_G_LOOP:
+033C E8          62             mov a, R0 ; Byte to write is in R0
+033D 33          63             rlc a ; Carry flag has bit to write
+033E F8          64             mov R0, a
+033F 92A1        65             mov MY_MOSI, c
+0341 D2A3        66             setb MY_SCLK ; Transmit
+0343 A2A2        67             mov c, MY_MISO ; Read received bit
+0345 E9          68             mov a, R1 ; Save received bit in R1
+0346 33          69             rlc a
+0347 F9          70             mov R1, a
+0348 C2A3        71             clr MY_SCLK
+034A DAF0        72             djnz R2, DO_SPI_G_LOOP
+034C D0E0        73             pop acc
+034E 22          74             ret
+034F             75   
+034F             76   ;---------------------------------;
+034F             77   ; initialize the serial ports     ;
+034F             78   ;---------------------------------;
+034F             79   InitSerialPort:
+034F             80       ; Since the reset button bounces, we need to wait a bit before
+034F             81       ; sending messages, otherwise we risk displaying gibberish!
+034F 79DE        82       mov R1, #222
+0351 78A6        83       mov R0, #166
+0353 D8FE        84       djnz R0, $   ; 3 cycles->3*45.21123ns*166=22.51519us
+0355 D9FA        85       djnz R1, $-4 ; 22.51519us*222=4.998ms
+0357             86       ; Now we can proceed with the configuration
+0357 438780      87            orl     PCON,#0x80
+035A 759852      88            mov     SCON,#0x52
+035D 759B00      89            mov     BDRCON,#0x00
+0360 759AF4      90            mov     BRL,#BRG_VAL
+0363 759B1E      91            mov     BDRCON,#0x1E ; BDRCON=BRR|TBCK|RBCK|SPD;
+0366 22          92       ret
+0367             93   
+0367             94   ; Send a character using the serial port
+0367             95   putchar:
+0367 3099FD      96       jnb TI, putchar
+036A C299        97       clr TI
+036C F599        98       mov SBUF, a
+036E 22          99       ret
+036F            100       
+036F            101   getchar:
+036F 3098FD     102            jnb RI, getchar
+0372 C298       103            clr RI
+0374 E599       104            mov a, SBUF
+0376 22         105            ret     
+0377            106       
+0377            107   
+0377            108   ; Send a constant-zero-terminated string using the serial port
+0377            109   SendString:
+0377 E4         110       clr A
+0378 93         111       movc A, @A+DPTR
+0379 6006       112       jz SendStringDone ;if a = 0 go to sendstring done
+037B 120367     113       lcall putchar
+037E A3         114       inc DPTR
+037F 80F6       115       sjmp SendString
+0381            116   SendStringDone:
+0381 22         117       ret
+0382            118    
+0382            119    
+0382            120   GetString:
+0382 7841       121            mov R0, #buffer
+0384            122   GSLoop:
+0384 12036F     123            lcall getchar
+0387 C0E0       124            push acc
+0389 C3         125            clr c
+038A 9410       126            subb a, #10H
+038C D0E0       127            pop acc
+038E 4004       128            jc GSDone
+0390 F6         129            MOV @R0, A
+0391 08         130            inc R0
+0392 80F0       131            SJMP GSLoop
+0394            132   GSDone:
+0394 E4         133            clr a
+0395 F6         134            mov @R0, a
+0396 22         135            ret
+0397            136   
+0397            137   
+0397            138    Display_10_BCD:
+0397 C000       139            push ar0
+0399 A840       139            mov r0, bcd+4
+039B 12009B     139            lcall ?Display_BCD
+039E D000       139            pop ar0
+03A0 C000       140            push ar0
+03A2 A83F       140            mov r0, bcd+3
+03A4 12009B     140            lcall ?Display_BCD
+03A7 D000       140            pop ar0
+03A9 C000       141            push ar0
+03AB A83E       141            mov r0, bcd+2
+03AD 12009B     141            lcall ?Display_BCD
+03B0 D000       141            pop ar0
+03B2 C000       142            push ar0
+03B4 A83D       142            mov r0, bcd+1
+03B6 12009B     142            lcall ?Display_BCD
+03B9 D000       142            pop ar0
+03BB C000       143            push ar0
+03BD A83C       143            mov r0, bcd+0
+03BF 12009B     143            lcall ?Display_BCD
+03C2 D000       143            pop ar0
+03C4 22         144            ret
+03C5            145   
+03C5            146   
+03C5 48656C6C   147   Hello_World: DB  'Hello, World!', '\r', '\n', 0
      6F2C2057
      6F726C64
      210D0A00
-03AD 676F6F64   138   String: db 'good' , '\r', '\n', 0 
+03D5 676F6F64   148   String: db 'good' , '\r', '\n', 0 
      0D0A00
-03B4 566F6C74   139   Voltage: db 'Voltage is:', '\r', '\n', 0  
+03DC 566F6C74   149   Voltage: db 'Voltage is:', '\r', '\n', 0  
      61676520
      69733A0D
      0A00
-03C2            140   
-03C2            141   
-03C2            142   ;---------------------------------;
-03C2            143   ; MAIN PROGRAM LOOP                            ;
-03C2            144   ;---------------------------------;
-03C2            145   
-03C2            146   
-03C2            147   MainProgram:
-03C2 75817F     148       mov SP, #7FH ; Set the stack pointer to the begining of idata
-03C5            149       
-03C5 C0E0       150            push acc
-03C7 7401       150            mov a, #1
-03C9 14         150            dec a
-03CA 120096     150            lcall ?Set_Cursor_1 ; Select column and row
-03CD D0E0       150            pop acc
-03CF C083       151            push dph
-03D1 C082       151            push dpl
-03D3 C0E0       151            push acc
-03D5 90039D     151            mov dptr, #Hello_World
-03D8 120089     151            lcall ?Send_Constant_String
-03DB D0E0       151            pop acc
-03DD D082       151            pop dpl
-03DF D083       151            pop dph
-03E1            152       
-03E1 120355     153       lcall InitSerialPort ;sets up serial port with putty
-03E4 120337     154       lcall INIT_SPI ;sets up serial port with mcp
-03E7            155       
-03E7            156   loop: ;begin the infinite loop  
-03E7            157    
-03E7 C2A0       158            clr CE_ADC
-03E9            159            
-03E9 7801       160            mov R0, #00000001B ; Start bit:1
-03EB 12033C     161            lcall DO_SPI_G
-03EE 7880       162            mov R0, #10000000B ; Single ended, read channel 0
-03F0 12033C     163            lcall DO_SPI_G
-03F3 E9         164            mov a, R1 ; save the high bits first
-03F4 5403       165            anl a, #00000011B ; We need only the two least significant bits (8 and 9)
-03F6 F531       166            mov Result+1, a ; Save result high.
-03F8 7855       167            mov R0, #55H ; It doesn't matter what we transmit...
-03FA 12033C     168            lcall DO_SPI_G
-03FD 8930       169            mov Result, R1 ; R1 contains bits 0 to 7. Save result low.
-03FF            170            
-03FF D2A0       171            setb CE_ADC ;disable
-0401            172            
-0401            173   ; calculate voltage out
-0401 753430     174            mov x+0, #low (Result % 0x10000) 
-0404 753500     174            mov x+1, #high(Result % 0x10000) 
-0407 753600     174            mov x+2, #low (Result / 0x10000) 
-040A 753700     174            mov x+3, #high(Result / 0x10000) 
-040D 753800     175            mov y+0, #low (4096 % 0x10000) 
-0410 753910     175            mov y+1, #high(4096 % 0x10000) 
-0413 753A00     175            mov y+2, #low (4096 / 0x10000) 
-0416 753B00     175            mov y+3, #high(4096 / 0x10000) 
-0419 120241     176            lcall mul32
-041C 7538FF     177            mov y+0, #low (1023 % 0x10000) 
-041F 753903     177            mov y+1, #high(1023 % 0x10000) 
-0422 753A00     177            mov y+2, #low (1023 / 0x10000) 
-0425 753B00     177            mov y+3, #high(1023 / 0x10000) 
-0428 1202CE     178            lcall div32
-042B 7538E8     179            mov y+0, #low (1000 % 0x10000) 
-042E 753903     179            mov y+1, #high(1000 % 0x10000) 
-0431 753A00     179            mov y+2, #low (1000 / 0x10000) 
-0434 753B00     179            mov y+3, #high(1000 / 0x10000) 
-0437 1202CE     180            lcall div32
-043A E534       181            mov a, x
-26C93AC            182            hex2bcd(x)
-26C93AC            183            ;da a
-26C93AC            184            
-26C93AC            185   ;        mov a, Result
-26C93AC            186            
-26C93AC            187   ;        cjne a, #0x0, goto
-26C93AC            188    ;   ljmp loop   
-26C93AC            189     ;  mov DPTR, #Hello_World
-26C93AC            190       
-26C93AC            191    ;  da a
-26C93AC            192     ;  mov Result, a
-26C93AC            193       
-26C93AC 9003B4     194       mov DPTR, #Voltage
-26C93AF 12037D     195            lcall SendString
-26C93B2 C000       196            push ar0
-26C93B4 A83C       196            mov r0, bcd
-26C93B6 1200B1     196            lcall ?Send_BCD
-26C93B9 D000       196            pop ar0
-26C93BB C002       197            push AR2
-26C93BD 7AFF       197            mov R2, #255
-26C93BF 12000E     197            lcall ?Wait_Milli_Seconds
-26C93C2 D002       197            pop AR2
-26C93C4 C002       198            push AR2
-26C93C6 7AFF       198            mov R2, #255
-26C93C8 12000E     198            lcall ?Wait_Milli_Seconds
-26C93CB D002       198            pop AR2
-26C93CD C002       199            push AR2
-26C93CF 7AFF       199            mov R2, #255
-26C93D1 12000E     199            lcall ?Wait_Milli_Seconds
-26C93D4 D002       199            pop AR2
-26C93D6 C002       200            push AR2
-26C93D8 7AFF       200            mov R2, #255
-26C93DA 12000E     200            lcall ?Wait_Milli_Seconds
-26C93DD D002       200            pop AR2
-26C93DF            201       ;lcall SendString    
-26C93DF 0203E7     202       ljmp loop 
-26C93E2            203    
-26C93E2            204    goto:  
-26C93E2            205    
-26C93E2            206    ;       mov DPTR, #Hello_World
-26C93E2            207    ;       lcall SendString
-26C93E2 C000       208            push ar0
-26C93E4 783C       208            mov r0, #bcd
-26C93E6 1200B1     208            lcall ?Send_BCD
-26C93E9 D000       208            pop ar0
-26C93EB C002       209            push AR2
-26C93ED 7AFF       209            mov R2, #255
-26C93EF 12000E     209            lcall ?Wait_Milli_Seconds
-26C93F2 D002       209            pop AR2
-26C93F4 C002       210            push AR2
-26C93F6 7AFF       210            mov R2, #255
-26C93F8 12000E     210            lcall ?Wait_Milli_Seconds
-26C93FB D002       210            pop AR2
-26C93FD            211            
-26C93FD 0203E7     212            ljmp loop   
-26C9400            213   END
->>>>>>> Stashed changes
+03EA            150   
+03EA            151   
+03EA            152   ;---------------------------------;
+03EA            153   ; MAIN PROGRAM LOOP                            ;
+03EA            154   ;---------------------------------;
+03EA            155   
+03EA            156   
+03EA            157   MainProgram:
+03EA 75817F     158       mov SP, #7FH ; Set the stack pointer to the begining of idata
+03ED            159       
+03ED            160            ; initalize lcd and serial ports
+03ED 12005D     161       lcall LCD_4BIT
+03F0 12034F     162       lcall InitSerialPort ;
+03F3 120331     163       lcall INIT_SPI
+03F6            164   
+03F6 C0E0       165            push acc
+03F8 7401       165            mov a, #1
+03FA 14         165            dec a
+03FB 120096     165            lcall ?Set_Cursor_1 ; Select column and row
+03FE D0E0       165            pop acc
+0400 C083       166            push dph
+0402 C082       166            push dpl
+0404 C0E0       166            push acc
+0406 9003C5     166            mov dptr, #Hello_World
+0409 120089     166            lcall ?Send_Constant_String
+040C D0E0       166            pop acc
+040E D082       166            pop dpl
+0410 D083       166            pop dph
+0412            167       
+0412            168       
+0412            169   loop: ;begin the infinite loop  
+0412            170    
+0412 C2A0       171            clr CE_ADC
+0414            172            
+0414 7801       173            mov R0, #00000001B ; Start bit:1
+0416 120336     174            lcall DO_SPI_G
+0419 7880       175            mov R0, #10000000B ; Single ended, read channel 0
+041B 120336     176            lcall DO_SPI_G
+041E E9         177            mov a, R1 ; save the high bits first ; since we're reading a 10 bit value
+041F 5403       178            anl a, #00000011B ; We need only the two least significant bits (8 and 9)
+0421 F531       179            mov Result+1, a ; Save result high.
+0423 7855       180            mov R0, #55H ; It doesn't matter what we transmit...
+0425 120336     181            lcall DO_SPI_G
+0428 8930       182            mov Result, R1 ; R1 contains bits 0 to 7. Save result low.
+042A            183            
+042A D2A0       184            setb CE_ADC ;disable
+042C            185                                    
+042C E530       186            mov a, Result
+042E            187    ;       da a
+042E            188            
+042E F53C       189            mov bcd, a
+0430 C0E0       190            push acc
+0432 7401       190            mov a, #1
+0434 14         190            dec a
+0435 120094     190            lcall ?Set_Cursor_2 ; Select column and row
+0438 D0E0       190            pop acc
+043A            190   
+043A C000       191            push ar0
+043C A83C       191            mov r0, bcd
+043E 12009B     191            lcall ?Display_BCD
+0441 D000       191            pop ar0
+0443            192            
+0443 C002       193            push AR2
+0445 7AFF       193            mov R2, #255
+0447 12000E     193            lcall ?Wait_Milli_Seconds
+044A D002       193            pop AR2
+044C C002       194            push AR2
+044E 7AFF       194            mov R2, #255
+0450 12000E     194            lcall ?Wait_Milli_Seconds
+0453 D002       194            pop AR2
+0455            195            
+0455            196            ;mov bcd, Result
+0455            197            
+0455 C0E0       198            push acc
+0457 7407       198            mov a, #7
+0459 14         198            dec a
+045A 120094     198            lcall ?Set_Cursor_2 ; Select column and row
+045D D0E0       198            pop acc
+045F 120397     199            lcall Display_10_BCD
+0462            200            
+0462            201    ;       Send_BCD(Result) ; bcd is printed currently 53
+0462            202            
+0462 85303C     203            mov bcd, Result
+0465            204            
+0465 12014A     205            lcall bcd2hex ; bcd to x
+0468            206   ; i need to change result to decimal!    
+0468            207            
+0468            208            
+0468 C002       209            push AR2
+046A 7AFF       209            mov R2, #255
+046C 12000E     209            lcall ?Wait_Milli_Seconds
+046F D002       209            pop AR2
+0471 C002       210            push AR2
+0473 7AFF       210            mov R2, #255
+0475 12000E     210            lcall ?Wait_Milli_Seconds
+0478 D002       210            pop AR2
+047A            211   ; calculate voltage out
+047A 753430     212            mov x+0, #low (Result % 0x10000) 
+047D 753500     212            mov x+1, #high(Result % 0x10000) 
+0480 753600     212            mov x+2, #low (Result / 0x10000) 
+0483 753700     212            mov x+3, #high(Result / 0x10000) 
+0486 753800     213            mov y+0, #low (0x1000 % 0x10000) 
+0489 753910     213            mov y+1, #high(0x1000 % 0x10000) 
+048C 753A00     213            mov y+2, #low (0x1000 / 0x10000) 
+048F 753B00     213            mov y+3, #high(0x1000 / 0x10000) 
+0492 12023B     214            lcall mul32
+0495 7538FF     215            mov y+0, #low (0x3ff % 0x10000) 
+0498 753903     215            mov y+1, #high(0x3ff % 0x10000) 
+049B 753A00     215            mov y+2, #low (0x3ff / 0x10000) 
+049E 753B00     215            mov y+3, #high(0x3ff / 0x10000) 
+04A1 1202C8     216            lcall div32
+04A4 7538E8     217            mov y+0, #low (0x3E8 % 0x10000) 
+04A7 753903     217            mov y+1, #high(0x3E8 % 0x10000) 
+04AA 753A00     217            mov y+2, #low (0x3E8 / 0x10000) 
+04AD 753B00     217            mov y+3, #high(0x3E8 / 0x10000) 
+04B0 1202C8     218            lcall div32     
+04B3 1200C1     219            lcall hex2bcd
+04B6            220            
+04B6            221   ;        mov a, bcd
+04B6            222   ;        da a
+04B6            223   ;        mov bcd, a
+04B6            224            
+04B6 C0E0       225            push acc
+04B8 7407       225            mov a, #7
+04BA 14         225            dec a
+04BB 120096     225            lcall ?Set_Cursor_1 ; Select column and row
+04BE D0E0       225            pop acc
+04C0 120397     226            lcall Display_10_BCD
+04C3            227   
+04C3            228   
+04C3 9003DC     229       mov DPTR, #Voltage
+04C6 120377     230            lcall SendString        
+04C9 C000       231            push ar0
+04CB A83C       231            mov r0, bcd
+04CD 1200B1     231            lcall ?Send_BCD
+04D0 D000       231            pop ar0
+04D2            232            
+04D2 C002       233            push AR2
+04D4 7AFF       233            mov R2, #255
+04D6 12000E     233            lcall ?Wait_Milli_Seconds
+04D9 D002       233            pop AR2
+04DB C002       234            push AR2
+04DD 7AFF       234            mov R2, #255
+04DF 12000E     234            lcall ?Wait_Milli_Seconds
+04E2 D002       234            pop AR2
+04E4            235   
+04E4            236        
+04E4 020412     237       ljmp loop 
+04E7            238    
+04E7            239    
+04E7            240   END
