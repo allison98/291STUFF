@@ -1,5 +1,7 @@
 cseg
 
+;INCLUDE ALL MY MACROS HERE
+
 ; When using a 22.1184MHz crystal in fast mode
 ; one cycle takes 1.0/22.1184MHz = 45.21123 ns
 
@@ -191,6 +193,13 @@ endmac
 	pop acc
 	ret
 
+;putchar:
+ ;   jnb TI, putchar
+  ;  clr TI
+   ; mov SBUF, a
+    ;ret
+
+
 ;------------------------------------;
 ; Display a char in the LCD          ;
 ;------------------------------------;
@@ -201,4 +210,29 @@ Display_char mac
 	pop acc
 endmac
 
-	
+;---------------------------------;
+; Send a BCD number to PuTTY      ;
+;---------------------------------;
+Send_BCD mac
+	push ar0
+	mov r0, %0
+	lcall ?Send_BCD
+	pop ar0
+endmac
+
+?Send_BCD:
+	push acc
+	; Write most significant digit
+	mov a, r0
+	swap a
+	anl a, #0fh
+	orl a, #30h
+	lcall putchar
+	; write least significant digit
+	mov a, r0
+	anl a, #0fh
+	orl a, #30h
+	lcall putchar
+	pop acc
+	ret
+END
