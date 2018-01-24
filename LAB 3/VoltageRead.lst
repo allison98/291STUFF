@@ -189,7 +189,7 @@
 0000            188   CCF1           BIT 0xd9
 0000            189   CCF0           BIT 0xd8
 0000              2   org 0000H
-0000 0203EA       3      ljmp MainProgram
+0000 0205A8       3      ljmp MainProgram
 0003              4   
 0003              5   CLK  EQU 22118400
 0003              6   BAUD equ 115200
@@ -202,307 +202,570 @@
 0003             13   MY_MISO EQU P2.2
 0003             14   MY_SCLK EQU P2.3
 0003             15   
-0030             16   dseg at 0x30
-0030             17   Result: ds 4
-0034             18   x:   ds 4
-0038             19   y:   ds 4
-003C             20   bcd: ds 5
-0041             21   buffer: ds 30
-005F             22   
-005F             23   
-0000             24   BSEG
-0000             25   mf: dbit 1
-0001             26   
-0003             27   CSEG
-0003             28   ; These 'equ' must match the wiring between the microcontroller and the LCD!
-0003             29   LCD_RS equ P1.1
-0003             30   LCD_RW equ P1.2
-0003             31   LCD_E  equ P1.3
-0003             32   LCD_D4 equ P3.2
-0003             33   LCD_D5 equ P3.3
-0003             34   LCD_D6 equ P3.4
-0003             35   LCD_D7 equ P3.5
-                 37   $LIST
-00C1             39   
+0003             16   
+0003             17   TIMER0_RELOAD_L DATA 0xf2
+0003             18   TIMER0_RELOAD_H DATA 0xf4
+0003             19   
+0003             20   
+0003             21   
+0003             22   TIMER0_RATE   EQU 4096             ; 2048Hz squarewave (peak amplitude of CEM-1203 speaker)
+0003             23   TIMER0_RELOAD EQU ((65536-(CLK/TIMER0_RATE)))
+0003             24   
+0003             25   SOUND_OUT     equ P3.7
+0003             26   SNOOZE_BUTTON equ P0.3
+0003             27   FAREN equ P0.5
+0003             28   
+0003             29   
+0003             30   
+0003             31   ; External interrupt 0 vector (not used in this code)
+0003             32   org 0x0003
+0003 32          33            reti
+0004             34   
+0004             35   ; Timer/Counter 0 overflow interrupt vector
+000B             36   org 0x000B
+000B 020381      37            ljmp Timer0_ISR
+000E             38   
+000E             39   ; External interrupt 1 vector (not used in this code)
+0013             40   org 0x0013
+0013 32          41            reti
+0014             42   
+0014             43   ; Timer/Counter 1 overflow interrupt vector (not used in this code)
+001B             44   org 0x001B
+001B 32          45            reti
+001C             46   
+001C             47   ; Serial port receive/transmit interrupt vector (not used in this code)
+0023             48   org 0x0023 
+0023 32          49            reti
+0024             50            
+0024             51   ; Timer/Counter 2 overflow interrupt vector
+002B             52   org 0x002B
+002B 32          53            reti
+002C             54   
+002C             55   
+0030             56   dseg at 0x30
+0030             57   Result: ds 4
+0034             58   x:   ds 4
+0038             59   y:   ds 4
+003C             60   bcd: ds 5
+0041             61   buffer: ds 30
+005F             62   
+005F             63   
+0000             64   BSEG
+0000             65   mf: dbit 1
+0001             66   
+002C             67   CSEG
+002C             68   ; These 'equ' must match the wiring between the microcontroller and the LCD!
+002C             69   LCD_RS equ P1.1
+002C             70   LCD_RW equ P1.2
+002C             71   LCD_E  equ P1.3
+002C             72   LCD_D4 equ P3.2
+002C             73   LCD_D5 equ P3.3
+002C             74   LCD_D6 equ P3.4
+002C             75   LCD_D7 equ P3.5
+                 77   $LIST
+00F8             79   
                 546   $LIST
-                 41   $LIST
-0331             43   
-0331             44   ;---------------------------------;
-0331             45   ; initialize the slave                 ;
-0331             46   ;---------------------------------;
-0331             47   
-0331             48   INIT_SPI:
-0331 D2A2        49    setb MY_MISO ; Make MISO an input pin
-0333 C2A3        50    clr MY_SCLK ; For mode (0,0) SCLK is zero
-0335 22          51    ret
-0336             52   
-0336             53   ;---------------------------------;
-0336             54   ; recieive and send data               ;
-0336             55   ;---------------------------------;
-0336             56   
-0336             57   DO_SPI_G:
-0336 C0E0        58             push acc
-0338 7900        59             mov R1, #0 ; Received byte stored in R1
-033A 7A08        60             mov R2, #8 ; Loop counter (8-bits)
-033C             61   DO_SPI_G_LOOP:
-033C E8          62             mov a, R0 ; Byte to write is in R0
-033D 33          63             rlc a ; Carry flag has bit to write
-033E F8          64             mov R0, a
-033F 92A1        65             mov MY_MOSI, c
-0341 D2A3        66             setb MY_SCLK ; Transmit
-0343 A2A2        67             mov c, MY_MISO ; Read received bit
-0345 E9          68             mov a, R1 ; Save received bit in R1
-0346 33          69             rlc a
-0347 F9          70             mov R1, a
-0348 C2A3        71             clr MY_SCLK
-034A DAF0        72             djnz R2, DO_SPI_G_LOOP
-034C D0E0        73             pop acc
-034E 22          74             ret
-034F             75   
-034F             76   ;---------------------------------;
-034F             77   ; initialize the serial ports     ;
-034F             78   ;---------------------------------;
-034F             79   InitSerialPort:
-034F             80       ; Since the reset button bounces, we need to wait a bit before
-034F             81       ; sending messages, otherwise we risk displaying gibberish!
-034F 79DE        82       mov R1, #222
-0351 78A6        83       mov R0, #166
-0353 D8FE        84       djnz R0, $   ; 3 cycles->3*45.21123ns*166=22.51519us
-0355 D9FA        85       djnz R1, $-4 ; 22.51519us*222=4.998ms
-0357             86       ; Now we can proceed with the configuration
-0357 438780      87            orl     PCON,#0x80
-035A 759852      88            mov     SCON,#0x52
-035D 759B00      89            mov     BDRCON,#0x00
-0360 759AF4      90            mov     BRL,#BRG_VAL
-0363 759B1E      91            mov     BDRCON,#0x1E ; BDRCON=BRR|TBCK|RBCK|SPD;
-0366 22          92       ret
-0367             93   
-0367             94   ; Send a character using the serial port
-0367             95   putchar:
-0367 3099FD      96       jnb TI, putchar
-036A C299        97       clr TI
-036C F599        98       mov SBUF, a
-036E 22          99       ret
-036F            100       
-036F            101   getchar:
-036F 3098FD     102            jnb RI, getchar
-0372 C298       103            clr RI
-0374 E599       104            mov a, SBUF
-0376 22         105            ret     
-0377            106       
-0377            107   
-0377            108   ; Send a constant-zero-terminated string using the serial port
-0377            109   SendString:
-0377 E4         110       clr A
-0378 93         111       movc A, @A+DPTR
-0379 6006       112       jz SendStringDone ;if a = 0 go to sendstring done
-037B 120367     113       lcall putchar
-037E A3         114       inc DPTR
-037F 80F6       115       sjmp SendString
-0381            116   SendStringDone:
-0381 22         117       ret
-0382            118    
-0382            119    
-0382            120   GetString:
-0382 7841       121            mov R0, #buffer
-0384            122   GSLoop:
-0384 12036F     123            lcall getchar
-0387 C0E0       124            push acc
-0389 C3         125            clr c
-038A 9410       126            subb a, #10H
-038C D0E0       127            pop acc
-038E 4004       128            jc GSDone
-0390 F6         129            MOV @R0, A
-0391 08         130            inc R0
-0392 80F0       131            SJMP GSLoop
-0394            132   GSDone:
-0394 E4         133            clr a
-0395 F6         134            mov @R0, a
-0396 22         135            ret
-0397            136   
-0397            137   
-0397            138    Display_10_BCD:
-0397 C000       139            push ar0
-0399 A840       139            mov r0, bcd+4
-039B 12009B     139            lcall ?Display_BCD
-039E D000       139            pop ar0
-03A0 C000       140            push ar0
-03A2 A83F       140            mov r0, bcd+3
-03A4 12009B     140            lcall ?Display_BCD
-03A7 D000       140            pop ar0
-03A9 C000       141            push ar0
-03AB A83E       141            mov r0, bcd+2
-03AD 12009B     141            lcall ?Display_BCD
-03B0 D000       141            pop ar0
-03B2 C000       142            push ar0
-03B4 A83D       142            mov r0, bcd+1
-03B6 12009B     142            lcall ?Display_BCD
-03B9 D000       142            pop ar0
-03BB C000       143            push ar0
-03BD A83C       143            mov r0, bcd+0
-03BF 12009B     143            lcall ?Display_BCD
-03C2 D000       143            pop ar0
-03C4 22         144            ret
-03C5            145   
-03C5            146   
-03C5 48656C6C   147   Hello_World: DB  'Hello, World!', '\r', '\n', 0
+                 81   $LIST
+0368             83   
+0368             84   
+0368             85   
+0368             86   ;---------------------------------;
+0368             87   ; Routine to initialize the ISR   ;
+0368             88   ; for timer 0                     ;
+0368             89   ;---------------------------------;
+0368             90   Timer0_Init:
+0368 E589        91            mov a, TMOD
+036A 54F0        92            anl a, #0xf0 ; Clear the bits for timer 0
+036C 4401        93            orl a, #0x01 ; Configure timer 0 as 16-timer
+036E F589        94            mov TMOD, a
+0370 758CEA      95            mov TH0, #high(TIMER0_RELOAD)
+0373 758AE8      96            mov TL0, #low(TIMER0_RELOAD)
+0376             97            ; Set autoreload value
+0376 75F4EA      98            mov TIMER0_RELOAD_H, #high(TIMER0_RELOAD)
+0379 75F2E8      99            mov TIMER0_RELOAD_L, #low(TIMER0_RELOAD)
+037C            100            ; Enable the timer and interrupts
+037C D2A9       101       setb ET0  ; Enable timer 0 interrupt
+037E D28C       102       setb TR0  ; Start timer 0
+0380 22         103            ret
+0381            104   
+0381            105   ;---------------------------------;
+0381            106   ; ISR for timer 0.  Set to execute;
+0381            107   ; every 1/4096Hz to generate a    ;
+0381            108   ; 2048 Hz square wave at pin P3.7 ;
+0381            109   ;---------------------------------;
+0381            110   
+0381            111   Timer0_ISR:
+0381 B2B7       112            cpl SOUND_OUT; Connect speaker to P3.7!
+0383            113   notalarm:
+0383 32         114            reti
+0384            115   
+0384            116   ;---------------------------------;
+0384            117   ; initialize the slave                 ;
+0384            118   ;---------------------------------;
+0384            119   
+0384            120   INIT_SPI:
+0384 D2A2       121    setb MY_MISO ; Make MISO an input pin
+0386 C2A3       122    clr MY_SCLK ; For mode (0,0) SCLK is zero
+0388 22         123    ret
+0389            124   
+0389            125   ;---------------------------------;
+0389            126   ; recieive and send data               ;
+0389            127   ;---------------------------------;
+0389            128   
+0389            129   DO_SPI_G:
+0389 C0E0       130             push acc
+038B 7900       131             mov R1, #0 ; Received byte stored in R1
+038D 7A08       132             mov R2, #8 ; Loop counter (8-bits)
+038F            133   DO_SPI_G_LOOP:
+038F E8         134             mov a, R0 ; Byte to write is in R0
+0390 33         135             rlc a ; Carry flag has bit to write
+0391 F8         136             mov R0, a
+0392 92A1       137             mov MY_MOSI, c
+0394 D2A3       138             setb MY_SCLK ; Transmit
+0396 A2A2       139             mov c, MY_MISO ; Read received bit
+0398 E9         140             mov a, R1 ; Save received bit in R1
+0399 33         141             rlc a
+039A F9         142             mov R1, a
+039B C2A3       143             clr MY_SCLK
+039D DAF0       144             djnz R2, DO_SPI_G_LOOP
+039F D0E0       145             pop acc
+03A1 22         146             ret
+03A2            147   
+03A2            148   ;---------------------------------;
+03A2            149   ; initialize the serial ports     ;
+03A2            150   ;---------------------------------;
+03A2            151   InitSerialPort:
+03A2            152       ; Since the reset button bounces, we need to wait a bit before
+03A2            153       ; sending messages, otherwise we risk displaying gibberish!
+03A2 79DE       154       mov R1, #222
+03A4 78A6       155       mov R0, #166
+03A6 D8FE       156       djnz R0, $   ; 3 cycles->3*45.21123ns*166=22.51519us
+03A8 D9FA       157       djnz R1, $-4 ; 22.51519us*222=4.998ms
+03AA            158       ; Now we can proceed with the configuration
+03AA 438780     159            orl     PCON,#0x80
+03AD 759852     160            mov     SCON,#0x52
+03B0 759B00     161            mov     BDRCON,#0x00
+03B3 759AF4     162            mov     BRL,#BRG_VAL
+03B6 759B1E     163            mov     BDRCON,#0x1E ; BDRCON=BRR|TBCK|RBCK|SPD;
+03B9 22         164       ret
+03BA            165   
+03BA            166   ; Send a character using the serial port
+03BA            167   putchar1:
+03BA 3099FD     168       jnb TI, putchar1
+03BD C299       169       clr TI
+03BF F599       170       mov SBUF, a
+03C1 22         171       ret
+03C2            172       
+03C2            173   getchar:
+03C2 3098FD     174            jnb RI, getchar
+03C5 C298       175            clr RI
+03C7 E599       176            mov a, SBUF
+03C9 22         177            ret     
+03CA            178       
+03CA            179   
+03CA            180   ; Send a constant-zero-terminated string using the serial port
+03CA            181   SendString:
+03CA E4         182       clr A
+03CB 93         183       movc A, @A+DPTR
+03CC 6006       184       jz SendStringDone ;if a = 0 go to sendstring done
+03CE 1203BA     185       lcall putchar1
+03D1 A3         186       inc DPTR
+03D2 80F6       187       sjmp SendString
+03D4            188       
+03D4            189   SendStringDone:
+03D4 22         190       ret
+03D5            191    
+03D5            192    
+03D5            193   GetString:
+03D5 7841       194            mov R0, #buffer
+03D7            195   GSLoop:
+03D7 1203C2     196            lcall getchar
+03DA C0E0       197            push acc
+03DC C3         198            clr c
+03DD 9410       199            subb a, #10H
+03DF D0E0       200            pop acc
+03E1 4004       201            jc GSDone
+03E3 F6         202            MOV @R0, A
+03E4 08         203            inc R0
+03E5 80F0       204            SJMP GSLoop
+03E7            205   GSDone:
+03E7 E4         206            clr a
+03E8 F6         207            mov @R0, a
+03E9 22         208            ret
+03EA            209   
+03EA            210    Display_10_BCD:
+03EA C000       211            push ar0
+03EC A840       211            mov r0, bcd+4
+03EE 1200C4     211            lcall ?Display_BCD
+03F1 D000       211            pop ar0
+03F3 C000       212            push ar0
+03F5 A83F       212            mov r0, bcd+3
+03F7 1200C4     212            lcall ?Display_BCD
+03FA D000       212            pop ar0
+03FC C000       213            push ar0
+03FE A83E       213            mov r0, bcd+2
+0400 1200C4     213            lcall ?Display_BCD
+0403 D000       213            pop ar0
+0405 C000       214            push ar0
+0407 A83D       214            mov r0, bcd+1
+0409 1200C4     214            lcall ?Display_BCD
+040C D000       214            pop ar0
+040E C000       215            push ar0
+0410 A83C       215            mov r0, bcd+0
+0412 1200C4     215            lcall ?Display_BCD
+0415 D000       215            pop ar0
+0417 22         216            ret
+0418            217   
+0418            218   ; We can display a number any way we want.  In this case with
+0418            219   ; four decimal places.
+0418            220   Display_formated_BCD:
+0418 C0E0       221            push acc
+041A 7420       221            mov a, #' '
+041C 12007C     221            lcall ?WriteData
+041F D0E0       221            pop acc
+0421 C000       222            push ar0
+0423 A83F       222            mov r0, bcd+3
+0425 1200C4     222            lcall ?Display_BCD
+0428 D000       222            pop ar0
+042A C000       223            push ar0
+042C A83E       223            mov r0, bcd+2
+042E 1200C4     223            lcall ?Display_BCD
+0431 D000       223            pop ar0
+0433 C0E0       224            push acc
+0435 742E       224            mov a, #'.'
+0437 12007C     224            lcall ?WriteData
+043A D0E0       224            pop acc
+043C C000       225            push ar0
+043E A83D       225            mov r0, bcd+1
+0440 1200C4     225            lcall ?Display_BCD
+0443 D000       225            pop ar0
+0445 C000       226            push ar0
+0447 A83C       226            mov r0, bcd+0
+0449 1200C4     226            lcall ?Display_BCD
+044C D000       226            pop ar0
+044E 22         227            ret
+044F            228            
+044F            229   wait_for_P4_5:
+044F 20C5FD     230            jb P4.5, $ ; loop while the button is not pressed
+0452 C002       231            push AR2
+0454 7A32       231            mov R2, #50
+0456 120037     231            lcall ?Wait_Milli_Seconds
+0459 D002       231            pop AR2 ; debounce time
+045B 20C5F1     232            jb P4.5, wait_for_P4_5 ; it was a bounce, try again
+045E 30C5FD     233            jnb P4.5, $ ; loop while the button is pressed
+0461 22         234            ret
+0462            235   
+0462            236   
+0462            237    
+0462            238   Bonus:
+0462            239   ;---------------------------------;
+0462            240   ; comparisons                                  ;
+0462            241   ;---------------------------------;
+0462            242            ; x is currently the temperature
+0462            243            
+0462 753819     244            mov y+0, #low (25 % 0x10000) 
+0465 753900     244            mov y+1, #high(25 % 0x10000) 
+0468 753A00     244            mov y+2, #low (25 / 0x10000) 
+046B 753B00     244            mov y+3, #high(25 / 0x10000) 
+046E            245            ;x<y
+046E 120200     246            lcall x_lt_y
+0471            247            
+0471 200026     248            jb mf, printcold
+0474            249            
+0474 75381B     250            mov y+0, #low (27 % 0x10000) 
+0477 753900     250            mov y+1, #high(27 % 0x10000) 
+047A 753A00     250            mov y+2, #low (27 / 0x10000) 
+047D 753B00     250            mov y+3, #high(27 / 0x10000) 
+0480            251            ;x<y
+0480 120200     252            lcall x_lt_y
+0483 200031     253            jb mf, printperf
+0486            254            
+0486 75381D     255            mov y+0, #low (29 % 0x10000) 
+0489 753900     255            mov y+1, #high(29 % 0x10000) 
+048C 753A00     255            mov y+2, #low (29 / 0x10000) 
+048F 753B00     255            mov y+3, #high(29 / 0x10000) 
+0492            256            ;x<y
+0492 120200     257            lcall x_lt_y
+0495 20003C     258            jb mf, printhot
+0498            259            
+0498 8057       260            sjmp printfire
+049A            261            
+049A            262   printcold:
+049A C0E0       263            push acc
+049C 7401       263            mov a, #1
+049E 14         263            dec a
+049F 1200BD     263            lcall ?Set_Cursor_2 ; Select column and row
+04A2 D0E0       263            pop acc
+04A4 C083       264            push dph
+04A6 C082       264            push dpl
+04A8 C0E0       264            push acc
+04AA 900572     264            mov dptr, #cold
+04AD 1200B2     264            lcall ?Send_Constant_String
+04B0 D0E0       264            pop acc
+04B2 D082       264            pop dpl
+04B4 D083       264            pop dph
+04B6 22         265            ret
+04B7            266            
+04B7            267   printperf:
+04B7 C0E0       268            push acc
+04B9 7401       268            mov a, #1
+04BB 14         268            dec a
+04BC 1200BD     268            lcall ?Set_Cursor_2 ; Select column and row
+04BF D0E0       268            pop acc
+04C1 C083       269            push dph
+04C3 C082       269            push dpl
+04C5 C0E0       269            push acc
+04C7 90057C     269            mov dptr, #perf
+04CA 1200B2     269            lcall ?Send_Constant_String
+04CD D0E0       269            pop acc
+04CF D082       269            pop dpl
+04D1 D083       269            pop dph
+04D3 22         270            ret
+04D4            271            
+04D4            272   printhot:
+04D4 C0E0       273            push acc
+04D6 7401       273            mov a, #1
+04D8 14         273            dec a
+04D9 1200BD     273            lcall ?Set_Cursor_2 ; Select column and row
+04DC D0E0       273            pop acc
+04DE C083       274            push dph
+04E0 C082       274            push dpl
+04E2 C0E0       274            push acc
+04E4 90058C     274            mov dptr, #hot
+04E7 1200B2     274            lcall ?Send_Constant_String
+04EA D0E0       274            pop acc
+04EC D082       274            pop dpl
+04EE D083       274            pop dph
+04F0 22         275            ret
+04F1            276            
+04F1            277   printfire:
+04F1 C0E0       278            push acc
+04F3 7401       278            mov a, #1
+04F5 14         278            dec a
+04F6 1200BD     278            lcall ?Set_Cursor_2 ; Select column and row
+04F9 D0E0       278            pop acc
+04FB C083       279            push dph
+04FD C082       279            push dpl
+04FF C0E0       279            push acc
+0501 900599     279            mov dptr, #fire
+0504 1200B2     279            lcall ?Send_Constant_String
+0507 D0E0       279            pop acc
+0509 D082       279            pop dpl
+050B D083       279            pop dph
+050D 120511     280            lcall firealarm
+0510 22         281            ret
+0511            282            
+0511            283   ;---------------------------------;
+0511            284   ; FIRE ALARM                                   ;
+0511            285   ;---------------------------------;      
+0511            286   firealarm:
+0511 120368     287            lcall Timer0_Init
+0514            288            
+0514 208313     289            jb SNOOZE_BUTTON, go  ; 
+0517 C002       290            push AR2
+0519 7A32       290            mov R2, #50
+051B 120037     290            lcall ?Wait_Milli_Seconds
+051E D002       290            pop AR2         ; Debounce delay.  This macro is also in 'LCD_4bit.inc'
+0520 208307     291            jb SNOOZE_BUTTON, go  ; if the button is not pressed skip
+0523 3083FD     292            jnb SNOOZE_BUTTON, $
+0526 C28C       293            clr TR0
+0528 C2A9       294            clr ET0
+052A            295            
+052A            296   go:
+052A 22         297            ret
+052B            298   
+052B            299   
+052B 48656C6C   300   Hello_World: DB  'Hello, World!', '\r', '\n', 0
      6F2C2057
      6F726C64
      210D0A00
-03D5 676F6F64   148   String: db 'good' , '\r', '\n', 0 
+053B 676F6F64   301   String: db 'good' , '\r', '\n', 0 
      0D0A00
-03DC 566F6C74   149   Voltage: db 'Voltage is:', '\r', '\n', 0  
+0542 566F6C74   302   Voltage: db 'Voltage is:', '\r', '\n', 0  
      61676520
      69733A0D
      0A00
-03EA            150   
-03EA            151   
-03EA            152   ;---------------------------------;
-03EA            153   ; MAIN PROGRAM LOOP                            ;
-03EA            154   ;---------------------------------;
-03EA            155   
-03EA            156   
-03EA            157   MainProgram:
-03EA 75817F     158       mov SP, #7FH ; Set the stack pointer to the begining of idata
-03ED            159       
-03ED            160            ; initalize lcd and serial ports
-03ED 12005D     161       lcall LCD_4BIT
-03F0 12034F     162       lcall InitSerialPort ;
-03F3 120331     163       lcall INIT_SPI
-03F6            164   
-03F6 C0E0       165            push acc
-03F8 7401       165            mov a, #1
-03FA 14         165            dec a
-03FB 120096     165            lcall ?Set_Cursor_1 ; Select column and row
-03FE D0E0       165            pop acc
-0400 C083       166            push dph
-0402 C082       166            push dpl
-0404 C0E0       166            push acc
-0406 9003C5     166            mov dptr, #Hello_World
-0409 120089     166            lcall ?Send_Constant_String
-040C D0E0       166            pop acc
-040E D082       166            pop dpl
-0410 D083       166            pop dph
-0412            167       
-0412            168       
-0412            169   loop: ;begin the infinite loop  
-0412            170    
-0412 C2A0       171            clr CE_ADC
-0414            172            
-0414 7801       173            mov R0, #00000001B ; Start bit:1
-0416 120336     174            lcall DO_SPI_G
-0419 7880       175            mov R0, #10000000B ; Single ended, read channel 0
-041B 120336     176            lcall DO_SPI_G
-041E E9         177            mov a, R1 ; save the high bits first ; since we're reading a 10 bit value
-041F 5403       178            anl a, #00000011B ; We need only the two least significant bits (8 and 9)
-0421 F531       179            mov Result+1, a ; Save result high.
-0423 7855       180            mov R0, #55H ; It doesn't matter what we transmit...
-0425 120336     181            lcall DO_SPI_G
-0428 8930       182            mov Result, R1 ; R1 contains bits 0 to 7. Save result low.
-042A            183            
-042A D2A0       184            setb CE_ADC ;disable
-042C            185                                    
-042C E530       186            mov a, Result
-042E            187    ;       da a
-042E            188            
-042E F53C       189            mov bcd, a
-0430 C0E0       190            push acc
-0432 7401       190            mov a, #1
-0434 14         190            dec a
-0435 120094     190            lcall ?Set_Cursor_2 ; Select column and row
-0438 D0E0       190            pop acc
-043A            190   
-043A C000       191            push ar0
-043C A83C       191            mov r0, bcd
-043E 12009B     191            lcall ?Display_BCD
-0441 D000       191            pop ar0
-0443            192            
-0443 C002       193            push AR2
-0445 7AFF       193            mov R2, #255
-0447 12000E     193            lcall ?Wait_Milli_Seconds
-044A D002       193            pop AR2
-044C C002       194            push AR2
-044E 7AFF       194            mov R2, #255
-0450 12000E     194            lcall ?Wait_Milli_Seconds
-0453 D002       194            pop AR2
-0455            195            
-0455            196            ;mov bcd, Result
-0455            197            
-0455 C0E0       198            push acc
-0457 7407       198            mov a, #7
-0459 14         198            dec a
-045A 120094     198            lcall ?Set_Cursor_2 ; Select column and row
-045D D0E0       198            pop acc
-045F 120397     199            lcall Display_10_BCD
-0462            200            
-0462            201    ;       Send_BCD(Result) ; bcd is printed currently 53
-0462            202            
-0462 85303C     203            mov bcd, Result
-0465            204            
-0465 12014A     205            lcall bcd2hex ; bcd to x
-0468            206   ; i need to change result to decimal!    
-0468            207            
-0468            208            
-0468 C002       209            push AR2
-046A 7AFF       209            mov R2, #255
-046C 12000E     209            lcall ?Wait_Milli_Seconds
-046F D002       209            pop AR2
-0471 C002       210            push AR2
-0473 7AFF       210            mov R2, #255
-0475 12000E     210            lcall ?Wait_Milli_Seconds
-0478 D002       210            pop AR2
-047A            211   ; calculate voltage out
-047A 753430     212            mov x+0, #low (Result % 0x10000) 
-047D 753500     212            mov x+1, #high(Result % 0x10000) 
-0480 753600     212            mov x+2, #low (Result / 0x10000) 
-0483 753700     212            mov x+3, #high(Result / 0x10000) 
-0486 753800     213            mov y+0, #low (0x1000 % 0x10000) 
-0489 753910     213            mov y+1, #high(0x1000 % 0x10000) 
-048C 753A00     213            mov y+2, #low (0x1000 / 0x10000) 
-048F 753B00     213            mov y+3, #high(0x1000 / 0x10000) 
-0492 12023B     214            lcall mul32
-0495 7538FF     215            mov y+0, #low (0x3ff % 0x10000) 
-0498 753903     215            mov y+1, #high(0x3ff % 0x10000) 
-049B 753A00     215            mov y+2, #low (0x3ff / 0x10000) 
-049E 753B00     215            mov y+3, #high(0x3ff / 0x10000) 
-04A1 1202C8     216            lcall div32
-04A4 7538E8     217            mov y+0, #low (0x3E8 % 0x10000) 
-04A7 753903     217            mov y+1, #high(0x3E8 % 0x10000) 
-04AA 753A00     217            mov y+2, #low (0x3E8 / 0x10000) 
-04AD 753B00     217            mov y+3, #high(0x3E8 / 0x10000) 
-04B0 1202C8     218            lcall div32     
-04B3 1200C1     219            lcall hex2bcd
-04B6            220            
-04B6            221   ;        mov a, bcd
-04B6            222   ;        da a
-04B6            223   ;        mov bcd, a
-04B6            224            
-04B6 C0E0       225            push acc
-04B8 7407       225            mov a, #7
-04BA 14         225            dec a
-04BB 120096     225            lcall ?Set_Cursor_1 ; Select column and row
-04BE D0E0       225            pop acc
-04C0 120397     226            lcall Display_10_BCD
-04C3            227   
-04C3            228   
-04C3 9003DC     229       mov DPTR, #Voltage
-04C6 120377     230            lcall SendString        
-04C9 C000       231            push ar0
-04CB A83C       231            mov r0, bcd
-04CD 1200B1     231            lcall ?Send_BCD
-04D0 D000       231            pop ar0
-04D2            232            
-04D2 C002       233            push AR2
-04D4 7AFF       233            mov R2, #255
-04D6 12000E     233            lcall ?Wait_Milli_Seconds
-04D9 D002       233            pop AR2
-04DB C002       234            push AR2
-04DD 7AFF       234            mov R2, #255
-04DF 12000E     234            lcall ?Wait_Milli_Seconds
-04E2 D002       234            pop AR2
-04E4            235   
-04E4            236        
-04E4 020412     237       ljmp loop 
-04E7            238    
-04E7            239    
-04E7            240   END
+0550 54656D70   303   Temp: db 'Temperature is:', '\r', '\n', 0  
+     65726174
+     75726520
+     69733A0D
+     0A00
+0562 0D0A00     304   space: db '\r', '\n', 0
+0565 54656D70   305   Temper: DB  'Temperature:', 0
+     65726174
+     7572653A
+     00
+0572 42756E64   306   cold: DB  'Bundle Up', 0
+     6C652055
+     7000
+057C 54686973   307   perf: DB  'This is Perfect', 0
+     20697320
+     50657266
+     65637400
+058C 546F6F20   308   hot: DB  'Too Hot, UGH', 0
+     486F742C
+     20554748
+     00
+0599 46495245   309   fire: db 'FIRE FIRE FIRE' , 0
+     20464952
+     45204649
+     524500
+05A8            310   
+05A8            311   
+05A8            312   ;---------------------------------;
+05A8            313   ; MAIN PROGRAM LOOP                            ;
+05A8            314   ;---------------------------------;
+05A8            315   
+05A8            316   
+05A8            317   MainProgram:
+05A8 75817F     318       mov SP, #7FH ; Set the stack pointer to the begining of idata
+05AB            319       
+05AB            320            ; initalize lcd and serial ports
+05AB 120086     321       lcall LCD_4BIT
+05AE 1203A2     322       lcall InitSerialPort ;
+05B1 120384     323       lcall INIT_SPI
+05B4 75E600     324            mov P0M0, #0
+05B7 75E700     325       mov P0M1, #0
+05BA D2AF       326       setb EA  
+05BC            327       
+05BC C0E0       328            push acc
+05BE 7401       328            mov a, #1
+05C0 14         328            dec a
+05C1 1200BF     328            lcall ?Set_Cursor_1 ; Select column and row
+05C4 D0E0       328            pop acc
+05C6 C083       329            push dph
+05C8 C082       329            push dpl
+05CA C0E0       329            push acc
+05CC 900565     329            mov dptr, #Temper
+05CF 1200B2     329            lcall ?Send_Constant_String
+05D2 D0E0       329            pop acc
+05D4 D082       329            pop dpl
+05D6 D083       329            pop dph
+05D8 C0E0       330            push acc
+05DA 740F       330            mov a, #15
+05DC 14         330            dec a
+05DD 1200BF     330            lcall ?Set_Cursor_1 ; Select column and row
+05E0 D0E0       330            pop acc
+05E2 74DF       331            mov a, #0xDF
+05E4 12007C     331            lcall ?WriteData
+05E7 C0E0       332            push acc
+05E9 7410       332            mov a, #16
+05EB 14         332            dec a
+05EC 1200BF     332            lcall ?Set_Cursor_1 ; Select column and row
+05EF D0E0       332            pop acc
+05F1 7443       333            mov a, #'C'
+05F3 12007C     333            lcall ?WriteData
+05F6            334   loop: ;begin the infinite loop  
+05F6            335    
+05F6 C2A0       336            clr CE_ADC
+05F8            337            
+05F8 7801       338            mov R0, #00000001B ; Start bit:1
+05FA 120389     339            lcall DO_SPI_G
+05FD 7880       340            mov R0, #10000000B ; Single ended, read channel 0
+05FF 120389     341            lcall DO_SPI_G
+0602 E9         342            mov a, R1 ; save the high bits first ; since we're reading a 10 bit value
+0603 5403       343            anl a, #00000011B ; We need only the two least significant bits (8 and 9)
+0605 F531       344            mov Result+1, a ; Save result high.
+0607 7855       345            mov R0, #55H ; It doesn't matter what we transmit...
+0609 120389     346            lcall DO_SPI_G
+060C 8930       347            mov Result, R1 ; R1 contains bits 0 to 7. Save result low.
+060E            348            
+060E D2A0       349            setb CE_ADC ;disable
+0610            350   
+0610            351   ;start doing stuff       
+0610 753400     352            mov x+0, #low (0 % 0x10000) 
+0613 753500     352            mov x+1, #high(0 % 0x10000) 
+0616 753600     352            mov x+2, #low (0 / 0x10000) 
+0619 753700     352            mov x+3, #high(0 / 0x10000) 
+061C            353   
+061C E530       354            mov a,Result
+061E F534       355            mov x,a
+0620 E531       356            mov a,Result+1
+0622 F535       357            mov x+1,a
+0624            358            
+0624            359   ;        lcall hex2bcd
+0624            360                            
+0624            361    ;       Set_Cursor(2, 7)
+0624            362   ;        lcall Display_10_BCD
+0624            363   ;        Send_BCD(bcd+2)
+0624            364   ;        Send_BCD(bcd+1)
+0624            365   ;        Send_BCD(bcd)
+0624            366   
+0624 900562     367            mov DPTR, #space
+0627            368   ;        lcall SendString
+0627            369            
+0627            370    ;       mov bcd, Result
+0627            371    ;       mov bcd+1, Result+1
+0627            372    ;       mov x, bcd
+0627            373   
+0627            374    
+0627            375   ; calculate voltage out
+0627 753400     376            mov x+0, #low (0 % 0x10000) 
+062A 753500     376            mov x+1, #high(0 % 0x10000) 
+062D 753600     376            mov x+2, #low (0 / 0x10000) 
+0630 753700     376            mov x+3, #high(0 / 0x10000) 
+0633 753800     377            mov y+0, #low (0 % 0x10000) 
+0636 753900     377            mov y+1, #high(0 % 0x10000) 
+0639 753A00     377            mov y+2, #low (0 / 0x10000) 
+063C 753B00     377            mov y+3, #high(0 / 0x10000) 
+063F            378   ;        Load_X(bcd)
+063F            379   
+063F E530       380            mov a,Result
+0641 F534       381            mov x,a
+0643 E531       382            mov a,Result+1
+0645 F535       383            mov x+1,a
+0647            384                    
+0647 75389A     385            mov y+0, #low (410 % 0x10000) 
+064A 753901     385            mov y+1, #high(410 % 0x10000) 
+064D 753A00     385            mov y+2, #low (410 / 0x10000) 
+0650 753B00     385            mov y+3, #high(410 / 0x10000) 
+0653 120272     386            lcall mul32
+0656 7538FF     387            mov y+0, #low (1023 % 0x10000) 
+0659 753903     387            mov y+1, #high(1023 % 0x10000) 
+065C 753A00     387            mov y+2, #low (1023 / 0x10000) 
+065F 753B00     387            mov y+3, #high(1023 / 0x10000) 
+0662 1202FF     388            lcall div32
+0665 753811     389            mov y+0, #low (273 % 0x10000) 
+0668 753901     389            mov y+1, #high(273 % 0x10000) 
+066B 753A00     389            mov y+2, #low (273 / 0x10000) 
+066E 753B00     389            mov y+3, #high(273 / 0x10000) 
+0671 1201DE     390            lcall sub32
+0674            391   
+0674            392            
+0674 C002       393            push AR2
+0676 7AFF       393            mov R2, #255
+0678 120037     393            lcall ?Wait_Milli_Seconds
+067B D002       393            pop AR2
+067D C002       394            push AR2
+067F 7AFF       394            mov R2, #255
+0681 120037     394            lcall ?Wait_Milli_Seconds
+0684 D002       394            pop AR2
+0686            395          
+0686 900550     396       mov DPTR, #Temp
+0689            397   ;        lcall SendString
+0689            398            
+0689 1200F8     399            lcall hex2bcd
+068C            400   
+068C C000       401            push ar0
+068E A83C       401            mov r0, bcd
+0690 1200E2     401            lcall ?Send_BCD
+0693 D000       401            pop ar0 
+0695            402       
+0695 900562     403       mov DPTR, #space
+0698 1203CA     404            lcall SendString 
+069B            405            
+069B C0E0       406            push acc
+069D 740D       406            mov a, #13
+069F 14         406            dec a
+06A0 1200BF     406            lcall ?Set_Cursor_1 ; Select column and row
+06A3 D0E0       406            pop acc
+06A5 C000       407            push ar0
+06A7 A83C       407            mov r0, bcd
+06A9 1200C4     407            lcall ?Display_BCD
+06AC D000       407            pop ar0
+06AE            408            
+06AE 120462     409            lcall Bonus
+06B1            410            
+06B1 0205F6     411       ljmp loop 
+06B4            412            
+06B4            413   END

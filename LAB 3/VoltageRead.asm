@@ -13,6 +13,46 @@ MY_MOSI EQU P2.1
 MY_MISO EQU P2.2
 MY_SCLK EQU P2.3
 
+
+TIMER0_RELOAD_L DATA 0xf2
+TIMER0_RELOAD_H DATA 0xf4
+
+
+
+TIMER0_RATE   EQU 4096             ; 2048Hz squarewave (peak amplitude of CEM-1203 speaker)
+TIMER0_RELOAD EQU ((65536-(CLK/TIMER0_RATE)))
+
+SOUND_OUT     equ P3.7
+SNOOZE_BUTTON equ P0.3
+FAREN equ P0.5
+
+
+
+; External interrupt 0 vector (not used in this code)
+org 0x0003
+	reti
+
+; Timer/Counter 0 overflow interrupt vector
+org 0x000B
+	ljmp Timer0_ISR
+
+; External interrupt 1 vector (not used in this code)
+org 0x0013
+	reti
+
+; Timer/Counter 1 overflow interrupt vector (not used in this code)
+org 0x001B
+	reti
+
+; Serial port receive/transmit interrupt vector (not used in this code)
+org 0x0023 
+	reti
+	
+; Timer/Counter 2 overflow interrupt vector
+org 0x002B
+	reti
+
+
 dseg at 0x30
 Result: ds 4
 x:   ds 4
@@ -40,6 +80,37 @@ $LIST
 $NOLIST
 $include(math32.inc) ; A library of Lmath functions
 $LIST
+
+
+
+;---------------------------------;
+; Routine to initialize the ISR   ;
+; for timer 0                     ;
+;---------------------------------;
+Timer0_Init:
+	mov a, TMOD
+	anl a, #0xf0 ; Clear the bits for timer 0
+	orl a, #0x01 ; Configure timer 0 as 16-timer
+	mov TMOD, a
+	mov TH0, #high(TIMER0_RELOAD)
+	mov TL0, #low(TIMER0_RELOAD)
+	; Set autoreload value
+	mov TIMER0_RELOAD_H, #high(TIMER0_RELOAD)
+	mov TIMER0_RELOAD_L, #low(TIMER0_RELOAD)
+	; Enable the timer and interrupts
+    setb ET0  ; Enable timer 0 interrupt
+    setb TR0  ; Start timer 0
+	ret
+
+;---------------------------------;
+; ISR for timer 0.  Set to execute;
+; every 1/4096Hz to generate a    ;
+; 2048 Hz square wave at pin P3.7 ;
+;---------------------------------;
+
+Timer0_ISR:
+	cpl SOUND_OUT; Connect speaker to P3.7!
+	reti
 
 ;---------------------------------;
 ; initialize the slave		      ;
@@ -92,8 +163,8 @@ InitSerialPort:
     ret
 
 ; Send a character using the serial port
-putchar:
-    jnb TI, putchar
+putchar1:
+    jnb TI, putchar1
     clr TI
     mov SBUF, a
     ret
@@ -110,9 +181,10 @@ SendString:
     clr A
     movc A, @A+DPTR
     jz SendStringDone ;if a = 0 go to sendstring done
-    lcall putchar
+    lcall putchar1
     inc DPTR
     sjmp SendString
+    
 SendStringDone:
     ret
  
@@ -134,7 +206,6 @@ GSDone:
 	mov @R0, a
 	ret
 
-
  Display_10_BCD:
 	Display_BCD(bcd+4)
 	Display_BCD(bcd+3)
@@ -143,10 +214,98 @@ GSDone:
 	Display_BCD(bcd+0)
 	ret
 
+; We can display a number any way we want.  In this case with
+; four decimal places.
+Display_formated_BCD:
+	Display_char(#' ')
+	Display_BCD(bcd+3)
+	Display_BCD(bcd+2)
+	Display_char(#'.')
+	Display_BCD(bcd+1)
+	Display_BCD(bcd+0)
+	ret
+	
+wait_for_P4_5:
+	jb P4.5, $ ; loop while the button is not pressed
+	Wait_Milli_Seconds(#50) ; debounce time
+	jb P4.5, wait_for_P4_5 ; it was a bounce, try again
+	jnb P4.5, $ ; loop while the button is pressed
+	ret
+
+
+ 
+Bonus:
+;---------------------------------;
+; comparisons 				      ;
+;---------------------------------;
+	; x is currently the temperature
+	
+	Load_y(25)
+	;x<y
+	lcall x_lt_y
+	
+	jb mf, printcold
+	
+	Load_y(27)
+	;x<y
+	lcall x_lt_y
+	jb mf, printperf
+	
+	Load_y(29)
+	;x<y
+	lcall x_lt_y
+	jb mf, printhot
+	
+	sjmp printfire
+	
+printcold:
+	Set_Cursor(2,1)
+	Send_Constant_String(#cold)
+	ret
+	
+printperf:
+	Set_Cursor(2,1)
+	Send_Constant_String(#perf)
+	ret
+	
+printhot:
+	Set_Cursor(2,1)
+	Send_Constant_String(#hot)
+	ret
+	
+printfire:
+	Set_Cursor(2,1)
+	Send_Constant_String(#fire)
+	lcall firealarm
+	ret
+	
+;---------------------------------;
+; FIRE ALARM				      ;
+;---------------------------------;	
+firealarm:
+	lcall Timer0_Init
+	
+	jb SNOOZE_BUTTON, go  ; 
+	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
+	jb SNOOZE_BUTTON, go  ; if the button is not pressed skip
+	jnb SNOOZE_BUTTON, $
+	clr TR0
+	clr ET0
+	
+go:
+	ret
+
 
 Hello_World: DB  'Hello, World!', '\r', '\n', 0
 String: db 'good' , '\r', '\n', 0 
 Voltage: db 'Voltage is:', '\r', '\n', 0  
+Temp: db 'Temperature is:', '\r', '\n', 0  
+space: db '\r', '\n', 0
+Temper: DB  'Temperature:', 0
+cold: DB  'Bundle Up', 0
+perf: DB  'This is Perfect', 0
+hot: DB  'Too Hot, UGH', 0
+fire: db 'FIRE FIRE FIRE' , 0
 
 
 ;---------------------------------;
@@ -161,11 +320,16 @@ MainProgram:
     lcall LCD_4BIT
     lcall InitSerialPort ;
     lcall INIT_SPI
-
+ 	mov P0M0, #0
+    mov P0M1, #0
+    setb EA  
+    
     Set_Cursor(1,1)
-	Send_Constant_String(#Hello_World)
-    
-    
+	Send_Constant_String(#Temper)
+    Set_Cursor(1,15)
+    WriteData(#0xDF)
+    Set_Cursor(1,16)
+    WriteData(#'C')
 loop: ;begin the infinite loop  
  
  	clr CE_ADC
@@ -182,59 +346,67 @@ loop: ;begin the infinite loop
 	mov Result, R1 ; R1 contains bits 0 to 7. Save result low.
 	
 	setb CE_ADC ;disable
-				
- 	mov a, Result
- 	da a
- 	
- 	mov bcd, a
- 	Set_Cursor(2,1)
- 	Display_BCD(bcd)
- 	
- 	Wait_Milli_Seconds(#255)
- 	Wait_Milli_Seconds(#255)
- 	
- 	;mov bcd, Result
- 	
- 	Set_Cursor(2, 7)
-	lcall Display_10_BCD
- 	
- ;	Send_BCD(Result) ; bcd is printed currently 53
- 	
- 	mov bcd, Result
- 	
- 	lcall bcd2hex ; bcd to x
-; i need to change result to decimal! 	
- 	
- 	
- 	Wait_Milli_Seconds(#255)
- 	Wait_Milli_Seconds(#255)
+
+;start doing stuff	
+	Load_X(0)
+
+	mov a,Result
+	mov x,a
+	mov a,Result+1
+	mov x+1,a
+	
+;	lcall hex2bcd
+			
+ ;	Set_Cursor(2, 7)
+;	lcall Display_10_BCD
+;	Send_BCD(bcd+2)
+;	Send_BCD(bcd+1)
+;	Send_BCD(bcd)
+
+	mov DPTR, #space
+;	lcall SendString
+	
+ ;	mov bcd, Result
+ ;	mov bcd+1, Result+1
+ ;	mov x, bcd
+
+ 
 ; calculate voltage out
-	Load_X(Result)
-	Load_y(0x1000)
+	Load_X(0)
+	Load_y(0)
+;	Load_X(bcd)
+
+	mov a,Result
+	mov x,a
+	mov a,Result+1
+	mov x+1,a
+		
+	load_y(410)
 	lcall mul32
-	Load_y(0x3ff)
+	load_y(1023)
 	lcall div32
-	Load_y(0x3E8)
-	lcall div32	
-	lcall hex2bcd
-	
-	mov a, bcd
-	da a
-	mov bcd, a
-	
-	Set_Cursor(1, 7)
-	lcall Display_10_BCD
+	load_y(273)
+	lcall sub32
 
-
-    mov DPTR, #Voltage
-	lcall SendString	
-	Send_BCD(bcd)
 	
 	Wait_Milli_Seconds(#255)
  	Wait_Milli_Seconds(#255)
+       
+    mov DPTR, #Temp
+;	lcall SendString
+	
+	lcall hex2bcd
 
-     
+    Send_BCD(bcd) 
+    
+    mov DPTR, #space
+	lcall SendString 
+	
+	Set_Cursor(1, 13)
+	Display_BCD(bcd)
+	
+	lcall Bonus
+    	
     ljmp loop 
- 
- 
+ 	
 END
